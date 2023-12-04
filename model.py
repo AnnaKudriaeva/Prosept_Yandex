@@ -151,7 +151,7 @@ def vectorize_text(documents_set1_cleaned, documents_set2_cleaned):
     return tfidf_matrix_set1, tfidf_matrix_set2
 
 
-def find_neighbors(tfidf_matrix_set1, tfidf_matrix_set2, n_neighbors=5):
+def find_neighbors(tfidf_matrix_set1, tfidf_matrix_set2, n_neighbors=20):
     nbrs = NearestNeighbors(n_neighbors=n_neighbors, metric="cosine").fit(
         tfidf_matrix_set1
     )
@@ -183,8 +183,6 @@ def create_dataframe(
 
                 if product_id_dealer == product_id:
                     target = 1
-                elif product_id_dealer == 0 and rank == 0:
-                    target = 1
                 else:
                     target = 0
 
@@ -205,24 +203,17 @@ def create_dataframe(
                 print(f"Index {idx} is out of bounds.")
 
     df_nn = pd.DataFrame(data)
-    df_nn["combined_documents"] = df_nn["document_set1"] + " " + df_nn["document_set2"]
     return df_nn
 
 
 def process_data(df_nn: pd.DataFrame):
-    X = df_nn[["combined_documents", "distance"]]
+    X = df_nn[["document_set1", "document_set2", "distance"]]
     y = df_nn["target"]
 
-    tfidf_vectorizer_full = TfidfVectorizer()
-    X_full_tfidf = tfidf_vectorizer_full.fit_transform(X["combined_documents"])
-    columns = tfidf_vectorizer_full.get_feature_names_out()
-    X_full_tfidf = pd.DataFrame(X_full_tfidf.toarray(), columns=columns)
+    categorical = ["document_set1", "document_set2"]
+    X[categorical] = X[categorical].astype('str')
 
-    X_full_tfidf = np.concatenate(
-        (X["distance"].values[:, np.newaxis], X_full_tfidf), axis=1
-    )
-
-    return X_full_tfidf, y
+    return X, y
 
 
 def load_model(model_path):
@@ -232,11 +223,11 @@ def load_model(model_path):
 
 
 def predict_probability_for_target_1(
-    X_full_tfidf, model_path="model/trained_catboost_model.pkl"
+    X, model_path="model/trained_catboost_model.pkl"
 ):
     model_ctb = load_model(model_path)
 
-    probabilities = model_ctb.predict_proba(X_full_tfidf)[:, 1]
+    probabilities = model_ctb.predict_proba(X)[:, 1]
 
     return probabilities
 
@@ -245,33 +236,29 @@ def generate_final_table(probabilities, df_nn):
     df_nn["Predicted_Class1"] = probabilities
 
     result = (
-        df_nn.groupby(df_nn.index // 5)
+        df_nn.groupby(df_nn.index // 20)
         .apply(lambda x: x.sort_values(by="Predicted_Class1", ascending=False))
         .reset_index(drop=True)
     )
 
     result.drop(
-        ["document_set1", "document_set2", "combined_documents"], axis=1, inplace=True
+        ["document_set1", "document_set2"], axis=1, inplace=True
     )
 
     def compute_metrics(group):
-        top_5 = group.nlargest(5, "Predicted_Class1")
-        true_positives = (top_5["target"] == 1).sum()
-        actual_positives = (group["target"] == 1).sum()
-        accuracy_5 = true_positives / 5  # Accuracy@5
-        recall_5 = (
-            true_positives / actual_positives if actual_positives != 0 else 0
-        )  # Recall@5
-        mrr_5 = (
-            1 / (top_5["target"].values.argmax() + 1)
-            if (top_5["target"] == 1).any()
-            else 0
-        )  # MRR@5
-        return pd.Series(
-            {"accuracy@5": accuracy_5, "recall@5": recall_5, "mrr@5": mrr_5}
-        )
+        top_20 = group.nlargest(20, 'Predicted_Class1')
+        if (top_20['target'] == 1).any():  # Проверка наличия хотя бы одной единицы в топ-20
+            top_5 = top_20.nlargest(5, 'Predicted_Class1')  # Выбираем топ-5 из топ-20
+            true_positives = (top_5['target'] == 1).sum() 
+            actual_positives = (group['target'] == 1).sum()  
+            accuracy_5 = true_positives  # Accuracy@5
+            recall_5 = true_positives / actual_positives if actual_positives != 0 else 0  # Recall@5
+            mrr_5 = 1 / (top_5['target'].values.argmax() + 1)  # MRR@5
+            return pd.Series({'accuracy@5': accuracy_5, 'recall@5': recall_5, 'mrr@5': mrr_5})
+        else:
+            return pd.Series({'accuracy@5': np.nan, 'recall@5': np.nan, 'mrr@5': np.nan})
 
-    metrics = result.groupby(np.arange(len(result)) // 5).apply(compute_metrics).mean()
+    metrics = result.groupby(np.arange(len(result)) // 20).apply(compute_metrics).mean()
 
     return result, metrics
 
@@ -311,9 +298,9 @@ if __name__ == "__main__":
         unique_df_2,
     )
 
-    X_full_tfidf, y = process_data(df_nn)
+    X, y = process_data(df_nn)
 
-    probabilities = predict_probability_for_target_1(X_full_tfidf)
+    probabilities = predict_probability_for_target_1(X)
 
     result, metrics = generate_final_table(probabilities, df_nn)
 
