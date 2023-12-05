@@ -15,6 +15,8 @@ from transliterate import translit
 
 nltk.download("stopwords")
 nltk.download("punkt")
+m = Mystem()
+
 
 RANDOM_STATE = 42
 
@@ -59,7 +61,6 @@ def stop_words():
 
 
 def clean_text(text):
-    m = Mystem()
 
     def replace_numbers_with_words(words):
         for i in range(len(words)):
