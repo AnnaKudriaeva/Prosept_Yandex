@@ -22,6 +22,9 @@ RANDOM_STATE = 42
 
 
 def read_data():
+    """
+    Reads data from CSV files.
+    """
     product = pd.read_csv("data/marketing_product.csv", sep=";")
     dealerprice = pd.read_csv("data/marketing_dealerprice.csv", sep=";")
     productdealer = pd.read_csv("data/marketing_productdealerkey.csv", sep=";")
@@ -29,6 +32,9 @@ def read_data():
 
 
 def merge_data(dealerprice, productdealer):
+    """
+    Merges dealerprice and productdealer dataframes.
+    """
     merged_df = pd.merge(
         dealerprice, productdealer, left_on="product_key", right_on="key", how="left"
     )
@@ -37,6 +43,9 @@ def merge_data(dealerprice, productdealer):
 
 
 def add_product_id(dealerprice, product):
+    """
+    Adds product IDs to the dealerprice dataframe and drop dublicates.
+    """
     dealerprice["product_id"] = dealerprice.groupby("product_name")[
         "product_id"
     ].ffill()
@@ -52,6 +61,9 @@ def add_product_id(dealerprice, product):
 
 
 def stop_words():
+    """
+    Creates a list of stopwords.
+    """
     stop_words_list = list(stopwords.words("russian"))
     words_to_remove = ["один", "два", "три"]
 
@@ -61,7 +73,9 @@ def stop_words():
 
 
 def clean_text(text):
-
+    """
+    Cleans and preprocesses text data.
+    """
     def replace_numbers_with_words(words):
         for i in range(len(words)):
             word = words[i]
@@ -122,16 +136,25 @@ def clean_text(text):
 
 
 def process_product_data(product):
+    """
+    Processes product data by applying text cleaning.
+    """
     product["name_1c_clean"] = product["name_1c"].apply(clean_text)
     return product
 
 
 def process_dealer_data(dealerprice):
+    """
+    Processes dealer data by applying text cleaning.
+    """
     dealerprice["product_name_clean"] = dealerprice["product_name"].apply(clean_text)
     return dealerprice
 
 
 def preprocess_data(product, dealerprice):
+    """
+    Preprocesses product and dealer data.
+    """
     unique_df_1 = product.drop_duplicates(subset=["name_1c_clean"])
     unique_df_2 = dealerprice.drop_duplicates(subset=["product_name_clean"])
 
@@ -142,6 +165,9 @@ def preprocess_data(product, dealerprice):
 
 
 def vectorize_text(documents_set1_cleaned, documents_set2_cleaned):
+    """
+    Converts text data into TF-IDF vectors.
+    """
     documents = np.concatenate([documents_set1_cleaned, documents_set2_cleaned])
     tfidf_vectorizer = TfidfVectorizer()
     tfidf_matrix = tfidf_vectorizer.fit_transform(documents)
@@ -153,6 +179,9 @@ def vectorize_text(documents_set1_cleaned, documents_set2_cleaned):
 
 
 def find_neighbors(tfidf_matrix_set1, tfidf_matrix_set2, n_neighbors=20):
+    """
+    Finds nearest neighbors based on cosine similarity.
+    """
     nbrs = NearestNeighbors(n_neighbors=n_neighbors, metric="cosine").fit(
         tfidf_matrix_set1
     )
@@ -168,6 +197,9 @@ def create_dataframe(
     unique_df_1,
     unique_df_2,
 ):
+    """
+    Creates a dataframe with obtained data.
+    """
     data = []
 
     for i, neighbors in enumerate(indices):
@@ -208,6 +240,9 @@ def create_dataframe(
 
 
 def process_data(df_nn: pd.DataFrame):
+    """
+    Processes data and prepares it for model training.
+    """
     X = df_nn[["document_set1", "document_set2", "distance"]]
     y = df_nn["target"]
 
@@ -218,6 +253,9 @@ def process_data(df_nn: pd.DataFrame):
 
 
 def load_model(model_path):
+    """
+    Loads a pre-trained machine learning model.
+    """
     with open(model_path, "rb") as file:
         loaded_model = pickle.load(file)
     return loaded_model
@@ -226,6 +264,9 @@ def load_model(model_path):
 def predict_probability_for_target_1(
     X, model_path="model/trained_catboost_model.pkl"
 ):
+    """
+    Predicts probabilities for target label 1 using a pre-trained model.
+    """
     model_ctb = load_model(model_path)
 
     probabilities = model_ctb.predict_proba(X)[:, 1]
@@ -234,6 +275,9 @@ def predict_probability_for_target_1(
 
 
 def generate_final_table(probabilities, df_nn):
+    """
+    Generates a final table with predicted probabilities and computes metrics.
+    """
     df_nn["Predicted_Class1"] = probabilities
 
     result = (
